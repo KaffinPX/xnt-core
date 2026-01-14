@@ -59,7 +59,7 @@ impl ProofCollection {
         self.type_scripts_halt.len() // type_scripts_halt
     }
 
-    fn extract_specific_witnesses(
+    pub fn extract_specific_witnesses(
         primitive_witness: &PrimitiveWitness,
     ) -> (
         RemovalRecordsIntegrityWitness,
