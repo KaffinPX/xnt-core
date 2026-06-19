@@ -380,6 +380,7 @@ impl<const MERKLE_TREE_HEIGHT: usize> Pow<MERKLE_TREE_HEIGHT> {
             || consensus_rule_set == ConsensusRuleSet::UpgradeVM
             || consensus_rule_set == ConsensusRuleSet::UpgradeVMv4
             || consensus_rule_set == ConsensusRuleSet::UpgradeVMv5
+            || consensus_rule_set == ConsensusRuleSet::UpgradeVMv7
         {
             // Commitment to all the fields in the block that are not pow
             mast_auth_paths.commit()
@@ -466,6 +467,7 @@ impl<const MERKLE_TREE_HEIGHT: usize> Pow<MERKLE_TREE_HEIGHT> {
             && consensus_rule_set != ConsensusRuleSet::UpgradeVM
             && consensus_rule_set != ConsensusRuleSet::UpgradeVMv4
             && consensus_rule_set != ConsensusRuleSet::UpgradeVMv5
+            && consensus_rule_set != ConsensusRuleSet::UpgradeVMv7
         {
             // The index swapping could be done here, or in each guess. Since
             // we're optimizing for fast guessing, the index swapping is done
@@ -538,7 +540,8 @@ impl<const MERKLE_TREE_HEIGHT: usize> Pow<MERKLE_TREE_HEIGHT> {
             | ConsensusRuleSet::TimelockExtension
             | ConsensusRuleSet::UpgradeVM
             | ConsensusRuleSet::UpgradeVMv4
-            | ConsensusRuleSet::UpgradeVMv5 => auth_paths.commit(),
+            | ConsensusRuleSet::UpgradeVMv5
+            | ConsensusRuleSet::UpgradeVMv7 => auth_paths.commit(),
         };
         let index_picker_preimage = Tip5::hash_pair(self.root, auth_paths.commit());
         let (index_a, index_b) = Self::indices(index_picker_preimage, self.nonce);
@@ -549,6 +552,7 @@ impl<const MERKLE_TREE_HEIGHT: usize> Pow<MERKLE_TREE_HEIGHT> {
             || consensus_rule_set == ConsensusRuleSet::UpgradeVM
             || consensus_rule_set == ConsensusRuleSet::UpgradeVMv4
             || consensus_rule_set == ConsensusRuleSet::UpgradeVMv5
+            || consensus_rule_set == ConsensusRuleSet::UpgradeVMv7
         {
             (
                 Self::leaf(leaf_prefix, index_a),

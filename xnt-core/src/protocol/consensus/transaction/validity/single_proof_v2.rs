@@ -287,7 +287,8 @@ pub(crate) async fn produce_single_proof(
         | ConsensusRuleSet::TimelockExtension
         | ConsensusRuleSet::UpgradeVM
         | ConsensusRuleSet::UpgradeVMv4
-        | ConsensusRuleSet::UpgradeVMv5 => {
+        | ConsensusRuleSet::UpgradeVMv5
+        | ConsensusRuleSet::UpgradeVMv7 => {
             // backed by CollectTypeScriptsV2's hash. For now it shares V1 so
             // the variant is wired and the rest of the cascade can be built.
             SingleProofV2::produce(primitive_witness, triton_vm_job_queue, proof_job_options).await
@@ -317,6 +318,8 @@ pub(crate) fn single_proof_claim(
         "6f6ea3083e506c048203a8505f8793aa70e4b1f610a352b14360f9e3fde21aa9373d607ddcf69888";
     const SINGLE_PROOF_V2_UPGRADE_VM_V4_DIGEST: &str = // SingleProofV2, v4 tree (UpgradeVMv4)
         "15312e1a996ae949b1c5aa9b3af6c3ca5f9566cae3e40aa7d0552b2ed780a279a7c3a3bb783aeee7";
+    const SINGLE_PROOF_V2_UPGRADE_VM_V5_DIGEST: &str = // SingleProofV2, v5 tree (UpgradeVMv5)
+        "e66985a98e4d5e455c5d11e57a16c3dca3cce2bd2a16d6f5e791f592801cc32eb99c57c32bf90e88";
 
     let input = tx_kernel_mast_hash.reversed().values().to_vec();
     let version = consensus_rule_set.triton_proof_version().claim_version();
@@ -346,8 +349,14 @@ pub(crate) fn single_proof_claim(
                 .about_version(version)
                 .with_input(input)
         }
-        // Current (v5) bytecode — recompute from the linked program.
-        ConsensusRuleSet::UpgradeVMv5 => SingleProofV2::claim(tx_kernel_mast_hash),
+        // UpgradeVMv5 (v5) bytecode — now a pre-v7 era, hardcoded.
+        ConsensusRuleSet::UpgradeVMv5 => {
+            Claim::new(Digest::try_from_hex(SINGLE_PROOF_V2_UPGRADE_VM_V5_DIGEST).unwrap())
+                .about_version(version)
+                .with_input(input)
+        }
+        // Current (v7) bytecode — recompute from the linked program.
+        ConsensusRuleSet::UpgradeVMv7 => SingleProofV2::claim(tx_kernel_mast_hash),
     }
 }
 
@@ -1371,8 +1380,9 @@ pub(crate) mod tests {
         // so SingleProofV2 verifies a CollectTypeScriptsV2 proof instead of
         // a V1 proof. Used by BlockAppendix consensus_claims under
         // ConsensusRuleSet::TimelockExtension.
-        // Program hash updated for UpgradeVMv5 (triton-vm v5); the UpgradeVMv4 (v4)
-        // digest (15312e1a…) lives on as a hardcoded constant in single_proof_claim.
-        "e66985a98e4d5e455c5d11e57a16c3dca3cce2bd2a16d6f5e791f592801cc32eb99c57c32bf90e88"
+        // Program hash updated for UpgradeVMv7 (triton-vm v7 / tasm-lib u128
+        // range-check); the UpgradeVMv5 (v5) digest (e66985a8…) lives on as a
+        // hardcoded constant in single_proof_claim.
+        "5c75cc2d808464503cccf3bf2467ff13bd3fc736d06aa4f661415852549900e04eb667ddd9792d76"
     );
 }

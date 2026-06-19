@@ -67,6 +67,8 @@ impl BlockProgram {
             "a7de94e8df6bba118dd6561d0e2ed391915e52b090330d6213cfb7160883e57b303a2481f11b85ab";
         const BLOCK_PROGRAM_UPGRADE_VM_V4_DIGEST: &str = // v4 tree (UpgradeVMv4), now pre-v5
             "1a4df646ce2b7d671d8b370870d91e2f0e0421b6cccb29e047109b823657ef31e86258586a699ad9";
+        const BLOCK_PROGRAM_UPGRADE_VM_V5_DIGEST: &str = // v5 tree (UpgradeVMv5), now pre-v7
+            "e14d426bd76aad647703efb21c880f678b9a2eabe8dcfba7d6fc97b4b6b0f402c38d0c1be5f4942f";
 
         match consensus_rule_set {
             ConsensusRuleSet::Reboot | ConsensusRuleSet::HardforkAlpha => {
@@ -81,8 +83,11 @@ impl BlockProgram {
             ConsensusRuleSet::UpgradeVMv4 => {
                 Digest::try_from_hex(BLOCK_PROGRAM_UPGRADE_VM_V4_DIGEST).unwrap()
             }
-            // Current (v5) bytecode — recompute from the linked program.
-            ConsensusRuleSet::UpgradeVMv5 => Self.hash(),
+            ConsensusRuleSet::UpgradeVMv5 => {
+                Digest::try_from_hex(BLOCK_PROGRAM_UPGRADE_VM_V5_DIGEST).unwrap()
+            }
+            // Current (v7) bytecode — recompute from the linked program.
+            ConsensusRuleSet::UpgradeVMv7 => Self.hash(),
         }
     }
 
@@ -650,7 +655,7 @@ pub(crate) mod tests {
     /// hf_upgrade_vm_blocks); the test skips gracefully if they're absent.
     #[traced_test]
     #[apply(shared_tokio_runtime)]
-    async fn pre_v5_block_proofs_are_checkpointed_under_v5() {
+    async fn pre_v7_block_proofs_are_checkpointed_under_v7() {
         use crate::application::json_rpc::core::model::block::appendix::RpcBlockAppendix;
         use crate::application::json_rpc::core::model::block::body::RpcBlockBody;
         use crate::application::json_rpc::core::model::block::RpcBlockProof;
@@ -685,9 +690,9 @@ pub(crate) mod tests {
             Some(BlockProgram::verify(&body, &appendix, &proof, Network::Main, crs).await)
         }
 
-        // Under the v5 verifier every PRE-v5 era is checkpointed (trusted) rather
-        // than re-verified: the binary links triton-vm v5, whose changed ISA
-        // cannot check the superseded proofs (including v4's). Lock in the boundary.
+        // Under the v7 verifier every PRE-v7 era is checkpointed (trusted) rather
+        // than re-verified: the binary links triton-vm v7, and the superseded
+        // eras (including v5) are trusted instead of re-verified. Lock in the boundary.
         for crs in [
             ConsensusRuleSet::Reboot,
             ConsensusRuleSet::HardforkAlpha,
@@ -695,25 +700,23 @@ pub(crate) mod tests {
             ConsensusRuleSet::TimelockExtension,
             ConsensusRuleSet::UpgradeVM,
             ConsensusRuleSet::UpgradeVMv4,
+            ConsensusRuleSet::UpgradeVMv5,
         ] {
             assert!(
                 crs.proofs_are_trusted(),
-                "{crs} is a superseded proof format and must be checkpointed under v5"
+                "{crs} is a superseded era and must be checkpointed under v7"
             );
         }
         assert!(
-            !ConsensusRuleSet::UpgradeVMv5.proofs_are_trusted(),
-            "UpgradeVMv5 (current proof format) must be re-verified, not trusted"
+            !ConsensusRuleSet::UpgradeVMv7.proofs_are_trusted(),
+            "UpgradeVMv7 (current era) must be re-verified, not trusted"
         );
 
         // Demonstrate WHY the checkpoint is necessary, not gratuitous: a REAL
-        // pre-v4 mainnet block proof does NOT verify under the v4 verifier
-        // (version-0/1 proof vs version-2 verifier). If a fixture is present, the
-        // direct `BlockProgram::verify` must return false.
+        // pre-v5 mainnet block proof does NOT verify under the v7 verifier
+        // (proof version 0/1/2 vs the v7 verifier's version 5). If a fixture is
+        // present, the direct `BlockProgram::verify` must return false.
         for (file, crs) in [
-            // The immediate predecessor era — a real UpgradeVM (v3) mainnet block.
-            // Its proof is version 1; the v4 verifier (version 2) cannot check it,
-            // which is exactly why UpgradeVM is now checkpointed.
             ("block_upgrade_vm_56000.json", ConsensusRuleSet::UpgradeVM),
             (
                 "block_timelock_54000.json",
@@ -725,10 +728,27 @@ pub(crate) mod tests {
             if let Some(ok) = verify_fixture(file, crs).await {
                 assert!(
                     !ok,
-                    "{file}: a pre-v4 proof must NOT verify under the v4 verifier — \
+                    "{file}: a pre-v5 proof must NOT verify under the v7 verifier — \
                      which is exactly why {crs} is checkpointed"
                 );
             }
+        }
+
+        // The immediate predecessor era: a REAL UpgradeVMv5 mainnet block (height
+        // 58000). v5 and v7 share the proof FORMAT (version 5), but the v5 block
+        // proof attests the v5 BlockProgram digest (e14d426b…) while tasm-lib's
+        // u128 range-check changed the v7 bytecode. Under the era-correct v5 claim
+        // the v7-linked verifier returns the verdict asserted below — observed, not
+        // assumed (it pins exactly what "checkpointed" protects against).
+        if let Some(ok) =
+            verify_fixture("block_upgrade_vm_v5_58000.json", ConsensusRuleSet::UpgradeVMv5).await
+        {
+            eprintln!("[v5-fixture] BlockProgram::verify under UpgradeVMv5 verdict = {ok}");
+            assert!(
+                !ok,
+                "block_upgrade_vm_v5_58000.json: a real v5 block proof must NOT verify under \
+                 the v7 verifier — which is exactly why UpgradeVMv5 is checkpointed"
+            );
         }
     }
 
@@ -766,6 +786,11 @@ pub(crate) mod tests {
                 UpgradeVMv4,
                 "1a4df646ce2b7d671d8b370870d91e2f0e0421b6cccb29e047109b823657ef31e86258586a699ad9",
             ),
+            // UpgradeVMv5 (v5) is now a pre-v7 era with a hardcoded digest.
+            (
+                UpgradeVMv5,
+                "e14d426bd76aad647703efb21c880f678b9a2eabe8dcfba7d6fc97b4b6b0f402c38d0c1be5f4942f",
+            ),
         ];
         for (crs, hex) in cases {
             assert_eq!(
@@ -774,9 +799,9 @@ pub(crate) mod tests {
                 "{crs} BlockProgram digest drifted"
             );
         }
-        // UpgradeVMv5 (current) recomputes from the linked (v5) program.
+        // UpgradeVMv7 (current) recomputes from the linked (v7) program.
         assert_eq!(
-            BlockProgram::program_digest_for(UpgradeVMv5),
+            BlockProgram::program_digest_for(UpgradeVMv7),
             BlockProgram.hash()
         );
     }
@@ -784,9 +809,9 @@ pub(crate) mod tests {
     test_program_snapshot!(
         BlockProgram,
         // snapshot taken from master on 2025-04-11 e2a712efc34f78c6a28801544418e7051127d284
-        // Program hash updated for UpgradeVMv5 (triton-vm v5); the UpgradeVMv4 (v4)
-        // digest (1a4df646…) lives on as a hardcoded prior-era digest in
-        // program_digest_for().
-        "e14d426bd76aad647703efb21c880f678b9a2eabe8dcfba7d6fc97b4b6b0f402c38d0c1be5f4942f"
+        // Program hash updated for UpgradeVMv7 (triton-vm v7 / tasm-lib u128
+        // range-check); the UpgradeVMv5 (v5) digest (e14d426b…) lives on as a
+        // hardcoded prior-era digest in program_digest_for().
+        "f87bda68a0959a023fd1843ca47ab72fab871a853f392fc6e3f889ef10206f89b3f8a8ec2743d78d"
     );
 }

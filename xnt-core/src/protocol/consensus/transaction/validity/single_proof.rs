@@ -289,7 +289,8 @@ pub(crate) async fn produce_single_proof(
         ConsensusRuleSet::TimelockExtension
         | ConsensusRuleSet::UpgradeVM
         | ConsensusRuleSet::UpgradeVMv4
-        | ConsensusRuleSet::UpgradeVMv5 => {
+        | ConsensusRuleSet::UpgradeVMv5
+        | ConsensusRuleSet::UpgradeVMv7 => {
             crate::protocol::consensus::transaction::validity::single_proof_v2::SingleProofV2
                 ::produce(primitive_witness, triton_vm_job_queue, proof_job_options)
                 .await
@@ -322,6 +323,8 @@ pub(crate) fn single_proof_claim(
         "6f6ea3083e506c048203a8505f8793aa70e4b1f610a352b14360f9e3fde21aa9373d607ddcf69888";
     const SINGLE_PROOF_V2_UPGRADE_VM_V4_DIGEST: &str = // SingleProofV2, v4 tree (UpgradeVMv4)
         "15312e1a996ae949b1c5aa9b3af6c3ca5f9566cae3e40aa7d0552b2ed780a279a7c3a3bb783aeee7";
+    const SINGLE_PROOF_V2_UPGRADE_VM_V5_DIGEST: &str = // SingleProofV2, v5 tree (UpgradeVMv5)
+        "e66985a98e4d5e455c5d11e57a16c3dca3cce2bd2a16d6f5e791f592801cc32eb99c57c32bf90e88";
 
     let input = tx_kernel_mast_hash.reversed().values().to_vec();
     let version = consensus_rule_set.triton_proof_version().claim_version();
@@ -354,8 +357,14 @@ pub(crate) fn single_proof_claim(
                 .about_version(version)
                 .with_input(input)
         }
-        // SingleProofV2, current (v5) bytecode — recompute from the linked program.
+        // SingleProofV2, UpgradeVMv5 (v5) bytecode — now a pre-v7 era, hardcoded.
         ConsensusRuleSet::UpgradeVMv5 => {
+            Claim::new(Digest::try_from_hex(SINGLE_PROOF_V2_UPGRADE_VM_V5_DIGEST).unwrap())
+                .about_version(version)
+                .with_input(input)
+        }
+        // SingleProofV2, current (v7) bytecode — recompute from the linked program.
+        ConsensusRuleSet::UpgradeVMv7 => {
             crate::protocol::consensus::transaction::validity::single_proof_v2::SingleProofV2::claim(
                 tx_kernel_mast_hash,
             )
@@ -1410,6 +1419,12 @@ pub(crate) mod tests {
                 "15312e1a996ae949b1c5aa9b3af6c3ca5f9566cae3e40aa7d0552b2ed780a279a7c3a3bb783aeee7",
                 2,
             ),
+            // UpgradeVMv5 (v5) is now a pre-v7 era with a frozen SingleProofV2 digest.
+            (
+                UpgradeVMv5,
+                "e66985a98e4d5e455c5d11e57a16c3dca3cce2bd2a16d6f5e791f592801cc32eb99c57c32bf90e88",
+                5,
+            ),
         ];
         for (crs, hex, ver) in cases {
             let claim = single_proof_claim(txkmh, crs);
@@ -1426,34 +1441,34 @@ pub(crate) mod tests {
             );
         }
 
-        // UpgradeVMv5 (current) is NOT frozen — it recomputes from the live v5
-        // SingleProofV2 program. Pin that it produces the live digest with claim
-        // version 2, mirroring the pre-v5 cases above.
+        // UpgradeVMv7 (current) is NOT frozen — it recomputes from the live v7
+        // SingleProofV2 program. Pin that it produces the live digest with the live
+        // claim version, mirroring the pre-v7 cases above.
         use crate::protocol::consensus::transaction::validity::single_proof_v2::SingleProofV2;
-        let v5_claim = single_proof_claim(txkmh, UpgradeVMv5);
+        let v7_claim = single_proof_claim(txkmh, UpgradeVMv7);
         assert_eq!(
-            v5_claim.program_digest,
+            v7_claim.program_digest,
             SingleProofV2.hash(),
-            "UpgradeVMv5 must recompute the live SingleProofV2 digest"
+            "UpgradeVMv7 must recompute the live SingleProofV2 digest"
         );
         assert_eq!(
-            v5_claim.version,
+            v7_claim.version,
             tasm_lib::triton_vm::proof::CURRENT_VERSION,
-            "UpgradeVMv5 claim version must match the live triton-vm proof version"
+            "UpgradeVMv7 claim version must match the live triton-vm proof version"
         );
         assert_eq!(
-            v5_claim.input,
+            v7_claim.input,
             txkmh.reversed().values().to_vec(),
-            "UpgradeVMv5 claim input wrong"
+            "UpgradeVMv7 claim input wrong"
         );
     }
 
     test_program_snapshot!(
         SingleProof,
-        // Re-hashed under triton-vm v5 (ISA change). SingleProof is the v1 program
-        // used only by checkpointed pre-TimelockExtension eras, which select
-        // hardcoded historical digests in single_proof_claim, so this live hash is
-        // a tripwire only and does not feed consensus.
-        "dec141d2ea4aecb5a6838de46457030313ddbae93b1d45500507117c233760e085c7f0ea8c8f2f29"
+        // Re-hashed under triton-vm v7 (tasm-lib u128 range-check). SingleProof is
+        // the v1 program used only by checkpointed pre-TimelockExtension eras, which
+        // select hardcoded historical digests in single_proof_claim, so this live
+        // hash is a tripwire only and does not feed consensus.
+        "57885d5ca34bb292d5c1057c1b93f01f3eb3dbf932705bef90fcdeae59a121a4028eaeb268ef150c"
     );
 }

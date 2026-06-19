@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-06-19
+
+### Breaking Changes
+
+- **Hardfork at block height 59200 (`UpgradeVMv7`)**: upgrade to Triton VM v7.0.0 / tasm-lib with u128 operand range-checks. The proof programs that embed the affected snippets (`SingleProof`, `SingleProofV2`, `BlockProgram`) are re-hashed; blocks before the fork — including the entire `UpgradeVMv5` era — are checkpointed (trusted, not re-verified) because their proofs were produced under triton-vm v5 and do not verify under the v7 verifier (confirmed against a real mainnet v5 block).
+- Updated package version from 0.2.4 to 0.2.5 (workspace-wide).
+
+### Added
+
+- **`UpgradeVMv7` consensus rule set**: activation height `BLOCK_HEIGHT_HARDFORK_UPGRADE_VM_V7_MAIN_NET = 59200`, with `TritonProofVersion::V7` whose claim version tracks the live triton-vm `CURRENT_VERSION` (still 5), and pinned pre-v7 program digests (`BlockProgram` `e14d426b…`, `SingleProofV2` `e66985a8…`).
+- **Pre-v7 proof checkpointing**: the `UpgradeVMv5` era is now trusted without re-verification (its v5 proofs cannot be checked by the v7 verifier).
+- Real `UpgradeVMv5` mainnet block fixture (`block_upgrade_vm_v5_58000.json`) demonstrating the checkpoint boundary.
+
+### Changed
+
+- Proof production, transaction verification, and proof-of-work now select the `UpgradeVMv7` programs at and above the fork height.
+- `TritonProofVersion::V5` claim version is frozen at `5` (no longer tracking the live constant, which now belongs to V7).
+
 ## [0.2.4] - 2026-06-14
 
 ### Breaking Changes
